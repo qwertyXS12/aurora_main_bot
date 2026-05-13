@@ -1,6 +1,2 @@
-git init
-git add main_bot.py requirements.txt
-git commit -m "Initial commit"
-git branch -M main
-git remote add origin https://github.com/qwertyXS12/aurora_main_bot.git
-git push -u origin main
+pyTelegramBotAPI
+requests
