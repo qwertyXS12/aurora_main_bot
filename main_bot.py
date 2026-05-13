@@ -53,8 +53,9 @@ def load_json(name):
     p = os.path.join(DATA_DIR, name)
     if os.path.exists(p):
         with open(p, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
+            data = json.load(f)
+            return data
+    return {}  # для словарей
 
 def save_json(name, data):
     with open(os.path.join(DATA_DIR, name), "w", encoding="utf-8") as f:
@@ -62,21 +63,33 @@ def save_json(name, data):
 
 def load_users():
     global users
-    users = load_json("users.json")
+    data = load_json("users.json")
+    if isinstance(data, dict):
+        users = data
+    else:
+        users = {}
 
 def save_users():
     save_json("users.json", users)
 
 def load_transactions():
     global transactions
-    transactions = load_json("transactions.json")
+    data = load_json("transactions.json")
+    if isinstance(data, list):
+        transactions = data
+    else:
+        transactions = []   # если файл повреждён или содержит словарь
 
 def save_transactions():
     save_json("transactions.json", transactions)
 
 def load_promocodes():
     global promocodes
-    promocodes = load_json("promo.json")
+    data = load_json("promo.json")
+    if isinstance(data, dict):
+        promocodes = data
+    else:
+        promocodes = {}
 
 def save_promocodes():
     save_json("promo.json", promocodes)
@@ -86,6 +99,9 @@ load_transactions()
 load_promocodes()
 
 def log_tx(uid, typ, amount, item=None, ref=None, status="pending", invoice_id=None):
+    global transactions
+    if not isinstance(transactions, list):
+        transactions = []
     transactions.append({
         "user_id": uid,
         "type": typ,
@@ -170,17 +186,14 @@ def edit_main_menu(call):
 def create_invoice(amount, desc):
     url = "https://pay.crypt.bot/api/createInvoice"
     headers = {"Crypto-Pay-API-Token": CRYPTO_PAY_TOKEN}
-    # Принудительно убираем .0 для целых сумм
-    if amount == int(amount):
-        amount_str = str(int(amount))
-    else:
-        amount_str = str(amount)
+    # Передаём сумму как есть, но в строке. CryptoPay принимает целые и дробные через точку.
+    amount_str = str(amount)
     payload = {
         "asset": "USDT",
         "amount": amount_str,
         "description": desc,
         "paid_btn_name": "callback",
-        "paid_btn_url": "https://t.me/ваш_бот"
+        "paid_btn_url": "https://t.me/ваш_бот"  # замените на ссылку вашего бота
     }
     try:
         r = requests.post(url, json=payload, headers=headers, timeout=15)
@@ -220,6 +233,8 @@ def auto_check_payment(chat_id, uid, invoice_id):
                 users[uid]["total_spent"] = users[uid].get("total_spent", 0) + order.price * qty
                 save_users()
                 bot.send_message(chat_id, "✅ Оплата получена! Товар будет выдан в ручном режиме.")
+            # Обновляем статус транзакций
+            global transactions
             for t in transactions:
                 if t.get("invoice_id") == invoice_id:
                     t["status"] = "paid"
@@ -227,7 +242,7 @@ def auto_check_payment(chat_id, uid, invoice_id):
             if uid in user_orders:
                 del user_orders[uid]
 
-# ======= /start =======
+# ======= Обработчики (полный список) =======
 @bot.message_handler(commands=['start'])
 def start(message):
     uid = str(message.from_user.id)
@@ -266,7 +281,6 @@ def start(message):
                 else:
                     link = f'<a href="tg://user?id={uid}">Пользователь</a>'
                 bot.send_message(ref, f"У вас новый реферал: {link}", parse_mode="HTML")
-
     uname = f"@{message.from_user.username}" if message.from_user.username else "нет"
     text = (f"🏛 Мой профиль ⌵\n\n"
             f"Телеграм ID: {uid}\n"
@@ -759,7 +773,7 @@ def buy_now(call):
     total = order.price * qty
     inv_url, inv_id, err = create_invoice(total, f"{order.item_name} x{qty}")
     if err:
-        bot.send_message(call.message.chat.id, "Ошибка создания счёта.")
+        bot.send_message(call.message.chat.id, f"Ошибка создания счёта: {err}")
         return
     order.invoice_id = inv_id
     order.is_topup = False
@@ -792,6 +806,7 @@ def check_payment(call):
             users[uid]["total_spent"] = users[uid].get("total_spent", 0) + order.price * qty
             save_users()
             bot.send_message(call.message.chat.id, "✅ Оплата прошла успешно! Товар будет выдан в ручном режиме.")
+        global transactions
         for t in transactions:
             if t.get("invoice_id") == order.invoice_id:
                 t["status"] = "paid"
@@ -905,7 +920,7 @@ def topup_amount(message):
     uid = str(message.from_user.id)
     inv_url, inv_id, err = create_invoice(amount, "Пополнение баланса")
     if err:
-        bot.send_message(message.chat.id, "Ошибка создания счёта.")
+        bot.send_message(message.chat.id, f"Ошибка создания счёта: {err}")
         start(message)
         return
     order = user_orders.setdefault(uid, OrderData())
