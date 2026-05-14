@@ -16,7 +16,7 @@ print("=" * 50)
 # ========== ПЕРЕМЕННЫЕ ИЗ ОКРУЖЕНИЯ ==========
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CRYPTO_PAY_TOKEN = os.getenv("CRYPTO_PAY_TOKEN")
-ADMIN_ID_SUPPORT = os.getenv("ADMIN_ID_SUPPORT", "8740158116")
+ADMIN_ID_SUPPORT = os.getenv("ADMIN_ID_SUPPORT", "8740158116")  # твой Telegram ID
 
 missing = []
 if not BOT_TOKEN:
@@ -49,13 +49,14 @@ promocodes = {}
 carts = {}
 active_tickets = {}
 
+# ========== ФУНКЦИИ ДЛЯ РАБОТЫ С ФАЙЛАМИ ==========
 def load_json(name):
     p = os.path.join(DATA_DIR, name)
     if os.path.exists(p):
         with open(p, "r", encoding="utf-8") as f:
             data = json.load(f)
             return data
-    return {}  # для словарей
+    return {}
 
 def save_json(name, data):
     with open(os.path.join(DATA_DIR, name), "w", encoding="utf-8") as f:
@@ -78,7 +79,7 @@ def load_transactions():
     if isinstance(data, list):
         transactions = data
     else:
-        transactions = []   # если файл повреждён или содержит словарь
+        transactions = []
 
 def save_transactions():
     save_json("transactions.json", transactions)
@@ -98,6 +99,27 @@ load_users()
 load_transactions()
 load_promocodes()
 
+# ========== УВЕДОМЛЕНИЯ АДМИНУ ==========
+def get_user_link(user_id):
+    """Возвращает строку вида @username (ID) или просто ID, если username нет"""
+    try:
+        chat = bot.get_chat(user_id)
+        username = chat.username
+        if username:
+            return f"@{username} (<code>{user_id}</code>)"
+        else:
+            return f"<code>{user_id}</code>"
+    except:
+        return f"<code>{user_id}</code>"
+
+def notify_admin(text):
+    """Отправляет сообщение админу (в личку)"""
+    try:
+        bot.send_message(ADMIN_ID_SUPPORT, text, parse_mode="HTML")
+    except Exception as e:
+        print("Не удалось отправить уведомление админу:", e)
+
+# ========== ОСТАЛЬНЫЕ ФУНКЦИИ ==========
 def log_tx(uid, typ, amount, item=None, ref=None, status="pending", invoice_id=None):
     global transactions
     if not isinstance(transactions, list):
@@ -182,18 +204,17 @@ def edit_main_menu(call):
             f"Общая сумма покупок: ${users[uid]['total_spent']:.2f}")
     safe_edit(call.message.chat.id, call.message.message_id, text, main_menu_kb())
 
-# ========== ИСПРАВЛЕННАЯ ФУНКЦИЯ СОЗДАНИЯ СЧЁТА ==========
+# ========== СОЗДАНИЕ СЧЁТА ==========
 def create_invoice(amount, desc):
     url = "https://pay.crypt.bot/api/createInvoice"
     headers = {"Crypto-Pay-API-Token": CRYPTO_PAY_TOKEN}
-    # Передаём сумму как есть, но в строке. CryptoPay принимает целые и дробные через точку.
     amount_str = str(amount)
     payload = {
         "asset": "USDT",
         "amount": amount_str,
         "description": desc,
         "paid_btn_name": "callback",
-        "paid_btn_url": "https://t.me/ваш_бот"  # замените на ссылку вашего бота
+        "paid_btn_url": "https://t.me/ваш_бот"
     }
     try:
         r = requests.post(url, json=payload, headers=headers, timeout=15)
@@ -227,12 +248,34 @@ def auto_check_payment(chat_id, uid, invoice_id):
                 users[uid]["balance"] = users[uid].get("balance", 0) + order.price
                 save_users()
                 bot.send_message(chat_id, "✅ Баланс автоматически пополнен!")
+                # Уведомление админу о пополнении
+                referrer = users[uid].get("referrer")
+                user_link = get_user_link(uid)
+                ref_link = get_user_link(referrer) if referrer else "пусто"
+                notify_admin(
+                    f"✅ <b>Успешное пополнение</b>\n"
+                    f"👤 Пользователь: {user_link}\n"
+                    f"👥 Реферал: {ref_link}\n"
+                    f"💰 Сумма: ${order.price:.2f}"
+                )
             else:
                 qty = 1 if order.no_qty else (order.qty if order.qty > 0 else 1)
                 users[uid]["bought"] = users[uid].get("bought", 0) + qty
                 users[uid]["total_spent"] = users[uid].get("total_spent", 0) + order.price * qty
                 save_users()
                 bot.send_message(chat_id, "✅ Оплата получена! Товар будет выдан в ручном режиме.")
+                # Уведомление админу о покупке
+                referrer = users[uid].get("referrer")
+                user_link = get_user_link(uid)
+                ref_link = get_user_link(referrer) if referrer else "пусто"
+                notify_admin(
+                    f"🛒 <b>Покупка товара</b>\n"
+                    f"👤 Пользователь: {user_link}\n"
+                    f"👥 Реферал: {ref_link}\n"
+                    f"📦 Товар: {order.item_name}\n"
+                    f"🔢 Кол-во: {qty}\n"
+                    f"💵 Сумма: ${order.price * qty:.2f}"
+                )
             # Обновляем статус транзакций
             global transactions
             for t in transactions:
@@ -242,7 +285,7 @@ def auto_check_payment(chat_id, uid, invoice_id):
             if uid in user_orders:
                 del user_orders[uid]
 
-# ======= Обработчики (полный список) =======
+# ========== ОСНОВНЫЕ ХЕНДЛЕРЫ ==========
 @bot.message_handler(commands=['start'])
 def start(message):
     uid = str(message.from_user.id)
@@ -281,6 +324,7 @@ def start(message):
                 else:
                     link = f'<a href="tg://user?id={uid}">Пользователь</a>'
                 bot.send_message(ref, f"У вас новый реферал: {link}", parse_mode="HTML")
+
     uname = f"@{message.from_user.username}" if message.from_user.username else "нет"
     text = (f"🏛 Мой профиль ⌵\n\n"
             f"Телеграм ID: {uid}\n"
@@ -800,12 +844,32 @@ def check_payment(call):
             users[uid]["balance"] = users[uid].get("balance", 0) + order.price
             save_users()
             bot.send_message(call.message.chat.id, "✅ Баланс успешно пополнен.")
+            referrer = users[uid].get("referrer")
+            user_link = get_user_link(uid)
+            ref_link = get_user_link(referrer) if referrer else "пусто"
+            notify_admin(
+                f"✅ <b>Успешное пополнение</b>\n"
+                f"👤 Пользователь: {user_link}\n"
+                f"👥 Реферал: {ref_link}\n"
+                f"💰 Сумма: ${order.price:.2f}"
+            )
         else:
             qty = 1 if order.no_qty else (order.qty if order.qty > 0 else 1)
             users[uid]["bought"] = users[uid].get("bought", 0) + qty
             users[uid]["total_spent"] = users[uid].get("total_spent", 0) + order.price * qty
             save_users()
             bot.send_message(call.message.chat.id, "✅ Оплата прошла успешно! Товар будет выдан в ручном режиме.")
+            referrer = users[uid].get("referrer")
+            user_link = get_user_link(uid)
+            ref_link = get_user_link(referrer) if referrer else "пусто"
+            notify_admin(
+                f"🛒 <b>Покупка товара</b>\n"
+                f"👤 Пользователь: {user_link}\n"
+                f"👥 Реферал: {ref_link}\n"
+                f"📦 Товар: {order.item_name}\n"
+                f"🔢 Кол-во: {qty}\n"
+                f"💵 Сумма: ${order.price * qty:.2f}"
+            )
         global transactions
         for t in transactions:
             if t.get("invoice_id") == order.invoice_id:
