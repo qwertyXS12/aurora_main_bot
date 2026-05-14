@@ -6,7 +6,7 @@ import math
 
 # ========== ДИАГНОСТИКА ОКРУЖЕНИЯ ==========
 print("=" * 50)
-print("ЗАПУСК ОСНОВНОГО БОТА")
+print("ЗАПУСК ОСНОВНОГО БОТА (ВЕРСИЯ С НОВЫМИ ТОВАРАМИ)")
 print("Переменные окружения, которые ВИДИТ контейнер:")
 for key in os.environ.keys():
     if "TOKEN" in key or "ID" in key:
@@ -376,7 +376,7 @@ def go_menu(call):
     bot.clear_step_handler_by_chat_id(call.message.chat.id)
     edit_main_menu(call)
 
-# ======= Каталог (расширенный) =======
+# ======= КАТАЛОГ (расширенный) =======
 @bot.callback_query_handler(func=lambda c: c.data == "catalog")
 def catalog(call):
     kb = types.InlineKeyboardMarkup(row_width=2)
@@ -446,7 +446,6 @@ def klein_item(call):
     user_orders[uid].item_name = name
     user_orders[uid].price = price
     user_orders[uid].stock = stock
-    # Минимальное количество: если цена < 10, то такое, чтобы price * min_qty >= 11
     if price < 10:
         user_orders[uid].min_qty = max(1, math.ceil(11 / price))
     else:
@@ -478,7 +477,7 @@ def wallapop_handreg(call):
     user_orders[uid].price = 0.75
     user_orders[uid].stock = 105
     if user_orders[uid].price < 10:
-        user_orders[uid].min_qty = max(1, math.ceil(11 / 0.75))  # 15
+        user_orders[uid].min_qty = max(1, math.ceil(11 / 0.75))
     else:
         user_orders[uid].min_qty = 1
     show_item_qty(call, uid)
@@ -622,7 +621,6 @@ def olx_item(call):
     user_orders[uid].item_name = name
     user_orders[uid].price = price
     user_orders[uid].stock = stock
-    # Игнорируем стандартный minq_default, устанавливаем свой
     if price < 10:
         user_orders[uid].min_qty = max(1, math.ceil(11 / price))
     else:
@@ -635,7 +633,7 @@ def tg_history_item(call):
     uid = str(call.from_user.id)
     name = "📱 Telegram аккаунт с историей (6+ мес)"
     price = 5.0
-    stock = 999  # условно
+    stock = 999
     user_orders[uid] = OrderData()
     user_orders[uid].item_name = name
     user_orders[uid].price = price
@@ -710,6 +708,7 @@ def tg_confirm(call):
     kb.add(types.InlineKeyboardButton("Меню", callback_data="menu"))
     safe_edit(call.message.chat.id, call.message.message_id, text, kb)
 
+# WhatsApp
 @bot.callback_query_handler(func=lambda c: c.data == "social_wa_start")
 def wa_start(call):
     uid = str(call.from_user.id)
