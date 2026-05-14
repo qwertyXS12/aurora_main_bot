@@ -5,7 +5,7 @@ from datetime import datetime
 import math
 
 print("=" * 50)
-print("ЗАПУСК ОСНОВНОГО БОТА (ДИНАМИЧЕСКОЕ ЧТЕНИЕ ТОВАРОВ)")
+print("ЗАПУСК ОСНОВНОГО БОТА (ИСПРАВЛЕННЫЙ, С ЗАПРОСОМ КОЛИЧЕСТВА)")
 print("Переменные окружения, которые ВИДИТ контейнер:")
 for key in os.environ.keys():
     if "TOKEN" in key or "ID" in key:
@@ -92,16 +92,13 @@ def load_promocodes():
 def save_promocodes():
     save_json("promo.json", promocodes)
 
-# ========== ДИНАМИЧЕСКАЯ ЗАГРУЗКА ТОВАРОВ ==========
 def get_current_goods():
-    """Всегда загружает актуальные товары из JSON-файла"""
     goods_path = os.path.join(DATA_DIR, "goods.json")
     if os.path.exists(goods_path):
         with open(goods_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     return {}
 
-# ========== УВЕДОМЛЕНИЯ АДМИНУ ==========
 def get_user_link(user_id):
     try:
         chat = bot.get_chat(user_id)
@@ -379,11 +376,14 @@ def go_menu(call):
     bot.clear_step_handler_by_chat_id(call.message.chat.id)
     edit_main_menu(call)
 
-# ======================= ДИНАМИЧЕСКИЙ КАТАЛОГ ИЗ goods.json =======================
+# ======================= ДИНАМИЧЕСКИЙ КАТАЛОГ =======================
 @bot.callback_query_handler(func=lambda c: c.data == "catalog")
 def catalog(call):
     goods = get_current_goods()
     categories = sorted(set(item["category"] for item in goods.values()))
+    if not categories:
+        safe_edit(call.message.chat.id, call.message.message_id, "Каталог пуст.", back_btn("menu"))
+        return
     kb = types.InlineKeyboardMarkup(row_width=2)
     for cat in categories:
         kb.add(types.InlineKeyboardButton(cat, callback_data=f"cat_{cat}"))
@@ -420,16 +420,25 @@ def show_item(call):
         user_orders[uid].min_qty = 1
     text = f"⭐️ {item['name']}\nЦена: ${item['price']:.2f}\nВ наличии: {item['stock']} шт.\n\n{item.get('description', '')}"
     kb = types.InlineKeyboardMarkup()
-    kb.add(types.InlineKeyboardButton("Купить", callback_data="buy_now"))
+    kb.add(types.InlineKeyboardButton("Купить", callback_data="buy_request"))
     kb.add(types.InlineKeyboardButton("В корзину", callback_data="add_to_cart"))
     kb.add(types.InlineKeyboardButton("⬅️ Назад", callback_data=f"cat_{item['category']}"))
     safe_edit(call.message.chat.id, call.message.message_id, text, kb)
 
-# ---------- Количество товара ----------
+# ======= Запрос количества и обработка =======
+@bot.callback_query_handler(func=lambda c: c.data == "buy_request")
+def buy_request(call):
+    uid = str(call.from_user.id)
+    order = user_orders.get(uid)
+    if not order:
+        bot.answer_callback_query(call.id, "Сначала выберите товар.")
+        return
+    show_item_qty(call, uid)
+
 def show_item_qty(call, uid):
     order = user_orders[uid]
     if order.stock == 0:
-        text = f"⭐️ Товар\nЦена: ${order.price:.2f}\nВ наличии: 0 шт."
+        text = f"⭐️ {order.item_key}\nЦена: ${order.price:.2f}\nВ наличии: 0 шт."
         safe_edit(call.message.chat.id, call.message.message_id, text, back_btn("menu"))
         return
     text = (f"⭐️ {order.item_key}\nЦена: ${order.price:.2f} за шт.\n"
@@ -443,7 +452,8 @@ def show_item_qty(call, uid):
 def process_qty(message):
     uid = str(message.from_user.id)
     order = user_orders.get(uid)
-    if not order: return
+    if not order:
+        return
     try:
         qty = int(message.text.strip())
     except ValueError:
@@ -467,7 +477,6 @@ def process_qty(message):
     kb.add(types.InlineKeyboardButton("⬅️ Назад", callback_data="menu"))
     bot.send_message(message.chat.id, text, reply_markup=kb)
 
-# ======================= КОРЗИНА =======================
 @bot.callback_query_handler(func=lambda c: c.data == "add_to_cart")
 def add_to_cart(call):
     uid = str(call.from_user.id)
