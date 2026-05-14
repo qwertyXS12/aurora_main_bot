@@ -5,7 +5,7 @@ from datetime import datetime
 import math
 
 print("=" * 50)
-print("ЗАПУСК ОСНОВНОГО БОТА (ВЕРСИЯ С JSON)")
+print("ЗАПУСК ОСНОВНОГО БОТА (ДИНАМИЧЕСКОЕ ЧТЕНИЕ ТОВАРОВ)")
 print("Переменные окружения, которые ВИДИТ контейнер:")
 for key in os.environ.keys():
     if "TOKEN" in key or "ID" in key:
@@ -35,7 +35,6 @@ print("=" * 50)
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 os.makedirs(DATA_DIR, exist_ok=True)
-GOODS_FILE = os.path.join(DATA_DIR, "goods.json")
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -93,71 +92,14 @@ def load_promocodes():
 def save_promocodes():
     save_json("promo.json", promocodes)
 
-def load_goods():
-    if not os.path.exists(GOODS_FILE):
-        # Инициализация стандартными товарами (полный список из примера выше)
-        default_goods = {
-            "klein_brute_top_old": {"category": "Аккаунты", "name": "⭐️ TOP 2009 - 2024", "price": 45.0, "stock": 6, "description": "Аккаунт Kleinanzeigen TOP 2009-2024"},
-            "klein_brute_mix_old": {"category": "Аккаунты", "name": "⚡️ MIX 2009 - 2024", "price": 35.0, "stock": 2, "description": "Аккаунт Kleinanzeigen MIX 2009-2024"},
-            "klein_brute_top_new": {"category": "Аккаунты", "name": "⭐️ TOP 2025-2026", "price": 50.0, "stock": 0, "description": "Аккаунт Kleinanzeigen TOP 2025-2026"},
-            "klein_brute_mix_new": {"category": "Аккаунты", "name": "⚡️ MIX 2025-2026", "price": 25.0, "stock": 16, "description": "Аккаунт Kleinanzeigen MIX 2025-2026"},
-            "klein_hand_mix": {"category": "Аккаунты", "name": "🌍 Mix | BandianaFarm", "price": 7.99, "stock": 0, "description": "Hand-Reg Kleinanzeigen Mix"},
-            "klein_hand_de": {"category": "Аккаунты", "name": "🇩🇪 De | Hand-Reg", "price": 9.5, "stock": 6, "description": "Hand-Reg Kleinanzeigen De"},
-            "wallapop_handreg": {"category": "Аккаунты", "name": "Hand-Reg Wallapop 2026", "price": 0.75, "stock": 105, "description": "Hand-Reg Wallapop 2026"},
-            "wallapop_brute_old": {"category": "Аккаунты", "name": "🇪🇸 Brt Cookie 2013-2023", "price": 9.9, "stock": 5, "description": "Brute Wallapop 2013-2023"},
-            "wallapop_brute_new": {"category": "Аккаунты", "name": "Cookie 2024-2025", "price": 5.99, "stock": 4, "description": "Brute Wallapop 2024-2025"},
-            "milanuncios": {"category": "Аккаунты", "name": "🇪🇸 Milanuncios.com • BRUTE • MIX", "price": 2.5, "stock": 85, "description": "Аккаунт Milanuncios"},
-            "offerup_brute": {"category": "Аккаунты", "name": "OfferUp.com BRUTE MIX", "price": 5.0, "stock": 30, "description": "OfferUp BRUTE MIX"},
-            "offerup_handreg": {"category": "Аккаунты", "name": "🇺🇸 Hand-Reg OfferUp 2026", "price": 0.4, "stock": 84, "description": "Hand-Reg OfferUp 2026"},
-            "Poshmark": {"category": "Аккаунты", "name": "🇺🇸 Poshmark.com • BRUTE • MIX", "price": 6.5, "stock": 56, "description": "Poshmark аккаунт"},
-            "Ricardo": {"category": "Аккаунты", "name": "🇨🇭 Ricardo.ch • BRUTE • MIX", "price": 17.0, "stock": 6, "description": "Ricardo аккаунт"},
-            "Tutti": {"category": "Аккаунты", "name": "🇨🇭 Tutti.ch • BRUTE • MIX", "price": 15.0, "stock": 3, "description": "Tutti аккаунт"},
-            "Subito": {"category": "Аккаунты", "name": "🇮🇹 Subito.it Mix 2007-2025", "price": 4.5, "stock": 50, "description": "Subito аккаунт"},
-            "Marktplaats": {"category": "Аккаунты", "name": "🇳🇱 Marktplaats.nl • BRUTE • MIX", "price": 5.0, "stock": 0, "description": "Marktplaats аккаунт"},
-            "Finn.no": {"category": "Аккаунты", "name": "🇳🇴 Finn.no • BRUTE • MIX", "price": 5.0, "stock": 0, "description": "Finn.no аккаунт"},
-            "Blocket": {"category": "Аккаунты", "name": "🇸🇪 Blocket.se • BRUTE • MIX", "price": 5.0, "stock": 0, "description": "Blocket аккаунт"},
-            "Tori.fi": {"category": "Аккаунты", "name": "🇫🇮 Tori.fi • BRUTE • MIX", "price": 6.0, "stock": 1, "description": "Tori.fi аккаунт"},
-            "DBA.dk": {"category": "Аккаунты", "name": "🇩🇰 DBA.dk • BRUTE • MIX", "price": 5.0, "stock": 2, "description": "DBA.dk аккаунт"},
-            "Depop": {"category": "Аккаунты", "name": "🌎 Depop.com • BRUTE • MIX", "price": 4.0, "stock": 7, "description": "Depop аккаунт"},
-            "Etsy": {"category": "Аккаунты", "name": "🌎 Etsy.com • BRUTE • MIX", "price": 5.0, "stock": 0, "description": "Etsy аккаунт"},
-            "Reverb": {"category": "Аккаунты", "name": "🌎 Reverb.com • BRUTE • MIX", "price": 5.0, "stock": 0, "description": "Reverb аккаунт"},
-            "olx_pl_mix": {"category": "Аккаунты", "name": "🇵🇱 Olx.pl 2008-2026 Mix", "price": 2.25, "stock": 31, "description": "Olx.pl Mix"},
-            "olx_pl_hand": {"category": "Аккаунты", "name": "🇵🇱 Hand-Reg Olx.pl", "price": 0.2, "stock": 0, "description": "Hand-Reg Olx.pl"},
-            "olx_ro_mix": {"category": "Аккаунты", "name": "🇷🇴 Olx.ro 2010-2026 Mix", "price": 2.75, "stock": 16, "description": "Olx.ro Mix"},
-            "olx_ro_hand": {"category": "Аккаунты", "name": "🇷🇴 Hand-Reg Olx.ro", "price": 0.2, "stock": 0, "description": "Hand-Reg Olx.ro"},
-            "olx_bg_mix": {"category": "Аккаунты", "name": "🇧🇬 Olx.bg 2005-2026 Mix", "price": 5.0, "stock": 22, "description": "Olx.bg Mix"},
-            "olx_bg_hand": {"category": "Аккаунты", "name": "🇧🇬 Hand-Reg Olx.bg", "price": 0.2, "stock": 39, "description": "Hand-Reg Olx.bg"},
-            "olx_pt_mix": {"category": "Аккаунты", "name": "🇵🇹 Olx.pt 2007-2026 Mix", "price": 2.75, "stock": 12, "description": "Olx.pt Mix"},
-            "olx_pt_hand": {"category": "Аккаунты", "name": "🇵🇹 Hand-Reg Olx.pt", "price": 0.2, "stock": 23, "description": "Hand-Reg Olx.pt"},
-            "tg_history": {"category": "Социальные сети", "name": "Telegram аккаунт с историей (6+ мес)", "price": 5.0, "stock": 55, "description": "Аккаунт Telegram с историей более 6 месяцев"},
-            "residential_proxy": {"category": "Proxy", "name": "Резидентные прокси (10 шт, ротация)", "price": 12.0, "stock": 42, "description": "Резидентные прокси, 10 шт, ротация IP"},
-            "proxy_300": {"category": "Proxy", "name": "9Proxy 300 IPs", "price": 13.0, "stock": 235, "description": "Прокси 300 IP"},
-            "proxy_800": {"category": "Proxy", "name": "9Proxy 800 IPs", "price": 33.0, "stock": 36, "description": "Прокси 800 IP"},
-            "proxy_5000": {"category": "Proxy", "name": "9Proxy 5000 IPs", "price": 165.0, "stock": 6, "description": "Прокси 5000 IP"},
-            "coupon_chatgpt": {"category": "Купоны", "name": "Купон ChatGPT Plus (1 месяц)", "price": 8.0, "stock": 23, "description": "Доступ к ChatGPT Plus на месяц"},
-            "coupon_midjourney": {"category": "Купоны", "name": "Купон Midjourney (полный доступ, 1 месяц)", "price": 9.5, "stock": 17, "description": "Доступ к Midjourney"},
-            "db_tg_channels": {"category": "Базы данных", "name": "База Telegram-каналов (5000, 3 темы)", "price": 15.0, "stock": 12, "description": "База каналов"},
-            "learn_olx": {"category": "Обучение", "name": "Полное обучение + мануалы по EU OLX. Личный наставник 2 нед.", "price": 25.0, "stock": 999, "description": "Курс по OLX"},
-            "learn_olx_course": {"category": "Обучение", "name": "Курс: Как найти клиентов на OLX (видео+мануал)", "price": 25.0, "stock": 88, "description": "Видеокурс"},
-            "prem_1": {"category": "Премиум", "name": "Премиум 1 месяц", "price": 5.0, "stock": 999, "description": "Premium подписка 1 месяц"},
-            "prem_3": {"category": "Премиум", "name": "Премиум 3 месяца", "price": 9.0, "stock": 999, "description": "Premium подписка 3 месяца"},
-            "prem_6": {"category": "Премиум", "name": "Премиум 6 месяцев", "price": 20.0, "stock": 999, "description": "Premium подписка 6 месяцев"},
-            "prem_12": {"category": "Премиум", "name": "Премиум 12 месяцев", "price": 36.0, "stock": 999, "description": "Premium подписка 12 месяцев"}
-        }
-        save_json("goods.json", default_goods)
-        return default_goods
-    else:
-        data = load_json("goods.json")
-        if isinstance(data, dict):
-            return data
-        else:
-            return {}
-
-def save_goods(goods):
-    save_json("goods.json", goods)
-
-# Загружаем товары
-goods = load_goods()
+# ========== ДИНАМИЧЕСКАЯ ЗАГРУЗКА ТОВАРОВ ==========
+def get_current_goods():
+    """Всегда загружает актуальные товары из JSON-файла"""
+    goods_path = os.path.join(DATA_DIR, "goods.json")
+    if os.path.exists(goods_path):
+        with open(goods_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {}
 
 # ========== УВЕДОМЛЕНИЯ АДМИНУ ==========
 def get_user_link(user_id):
@@ -438,16 +380,12 @@ def go_menu(call):
     edit_main_menu(call)
 
 # ======================= ДИНАМИЧЕСКИЙ КАТАЛОГ ИЗ goods.json =======================
-def get_categories():
-    cats = set()
-    for item in goods.values():
-        cats.add(item["category"])
-    return sorted(list(cats))
-
 @bot.callback_query_handler(func=lambda c: c.data == "catalog")
 def catalog(call):
+    goods = get_current_goods()
+    categories = sorted(set(item["category"] for item in goods.values()))
     kb = types.InlineKeyboardMarkup(row_width=2)
-    for cat in get_categories():
+    for cat in categories:
         kb.add(types.InlineKeyboardButton(cat, callback_data=f"cat_{cat}"))
     kb.add(types.InlineKeyboardButton("⬅️ Назад", callback_data="menu"))
     safe_edit(call.message.chat.id, call.message.message_id, "Выберите категорию:", kb)
@@ -455,6 +393,7 @@ def catalog(call):
 @bot.callback_query_handler(func=lambda c: c.data.startswith("cat_"))
 def show_category(call):
     cat = call.data[4:]
+    goods = get_current_goods()
     kb = types.InlineKeyboardMarkup(row_width=1)
     for key, item in goods.items():
         if item["category"] == cat:
@@ -465,6 +404,7 @@ def show_category(call):
 @bot.callback_query_handler(func=lambda c: c.data.startswith("item_"))
 def show_item(call):
     key = call.data[5:]
+    goods = get_current_goods()
     item = goods.get(key)
     if not item:
         bot.answer_callback_query(call.id, "Товар не найден")
@@ -474,7 +414,6 @@ def show_item(call):
     user_orders[uid].item_key = key
     user_orders[uid].price = item["price"]
     user_orders[uid].stock = item["stock"]
-    # Минимальное количество: если цена < 10, то такое, чтобы price * min_qty >= 11
     if item["price"] < 10:
         user_orders[uid].min_qty = max(1, math.ceil(11 / item["price"]))
     else:
@@ -671,12 +610,6 @@ def check_payment(call):
         user_orders.pop(uid, None)
     else:
         bot.answer_callback_query(call.id, "Оплата ещё не поступила.")
-
-# ======================= ДРУГИЕ ХЕНДЛЕРЫ (обучение, премиум и т.д. уже в goods.json, но для простоты оставим отдельные кнопки) =======================
-# Но поскольку обучение и премиум уже добавлены в goods.json, мы их не удаляем, но каталог их покажет.
-# Для совместимости оставим старые callback-обработчики, но они не будут вызываться, так как каталог динамический.
-# Для пополнения, рефералов, истории, техподдержки – они остаются.
-# Также WhatsApp и Telegram обычные (с выбором страны) пока не перенесены в JSON, но их можно оставить как есть.
 
 # ======================= ПОПОЛНЕНИЕ БАЛАНСА =======================
 @bot.callback_query_handler(func=lambda c: c.data == "topup")
