@@ -5,7 +5,7 @@ from datetime import datetime
 import math
 
 print("=" * 50)
-print("ЗАПУСК ОСНОВНОГО БОТА (ИСПРАВЛЕННЫЙ, С ЗАПРОСОМ КОЛИЧЕСТВА)")
+print("ЗАПУСК ОСНОВНОГО БОТА (СТАБИЛЬНАЯ ВЕРСИЯ, ТОВАРЫ В КОДЕ)")
 print("Переменные окружения, которые ВИДИТ контейнер:")
 for key in os.environ.keys():
     if "TOKEN" in key or "ID" in key:
@@ -92,12 +92,9 @@ def load_promocodes():
 def save_promocodes():
     save_json("promo.json", promocodes)
 
-def get_current_goods():
-    goods_path = os.path.join(DATA_DIR, "goods.json")
-    if os.path.exists(goods_path):
-        with open(goods_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    return {}
+load_users()
+load_transactions()
+load_promocodes()
 
 def get_user_link(user_id):
     try:
@@ -134,7 +131,7 @@ def log_tx(uid, typ, amount, item=None, ref=None, status="pending", invoice_id=N
 
 class OrderData:
     def __init__(self):
-        self.item_key = ""
+        self.item_name = ""
         self.price = 0.0
         self.stock = 0
         self.min_qty = 1
@@ -265,7 +262,7 @@ def auto_check_payment(chat_id, uid, invoice_id):
                     f"🛒 <b>Покупка товара</b>\n"
                     f"👤 Пользователь: {user_link}\n"
                     f"👥 Реферал: {ref_link}\n"
-                    f"📦 Товар: {order.item_key}\n"
+                    f"📦 Товар: {order.item_name}\n"
                     f"🔢 Кол-во: {qty}\n"
                     f"💵 Сумма: ${order.price * qty:.2f}"
                 )
@@ -376,72 +373,609 @@ def go_menu(call):
     bot.clear_step_handler_by_chat_id(call.message.chat.id)
     edit_main_menu(call)
 
-# ======================= ДИНАМИЧЕСКИЙ КАТАЛОГ =======================
+# ======================= КАТАЛОГ =======================
 @bot.callback_query_handler(func=lambda c: c.data == "catalog")
 def catalog(call):
-    goods = get_current_goods()
-    categories = sorted(set(item["category"] for item in goods.values()))
-    if not categories:
-        safe_edit(call.message.chat.id, call.message.message_id, "Каталог пуст.", back_btn("menu"))
-        return
     kb = types.InlineKeyboardMarkup(row_width=2)
-    for cat in categories:
-        kb.add(types.InlineKeyboardButton(cat, callback_data=f"cat_{cat}"))
-    kb.add(types.InlineKeyboardButton("⬅️ Назад", callback_data="menu"))
+    kb.add(types.InlineKeyboardButton("📱 Аккаунты", callback_data="cat_accounts"),
+           types.InlineKeyboardButton("🌐 Социальные сети", callback_data="cat_social"),
+           types.InlineKeyboardButton("🎓 Обучение", callback_data="cat_learning"),
+           types.InlineKeyboardButton("🌐 Proxy", callback_data="cat_proxy"),
+           types.InlineKeyboardButton("🎫 Купоны", callback_data="cat_coupons"),
+           types.InlineKeyboardButton("📚 Базы данных", callback_data="cat_databases"),
+           types.InlineKeyboardButton("⬅️ Назад", callback_data="menu"))
     safe_edit(call.message.chat.id, call.message.message_id, "Выберите категорию:", kb)
 
-@bot.callback_query_handler(func=lambda c: c.data.startswith("cat_"))
-def show_category(call):
-    cat = call.data[4:]
-    goods = get_current_goods()
-    kb = types.InlineKeyboardMarkup(row_width=1)
-    for key, item in goods.items():
-        if item["category"] == cat:
-            kb.add(types.InlineKeyboardButton(f"{item['name']} - ${item['price']} (в наличии: {item['stock']})", callback_data=f"item_{key}"))
+# ---------- Аккаунты ----------
+@bot.callback_query_handler(func=lambda c: c.data == "cat_accounts")
+def accounts(call):
+    plats = ["Kleinanzeigen","Wallapop","Milanuncios","OfferUp","Poshmark",
+             "Ricardo","Tutti","Subito","Marktplaats","Finn.no","Blocket",
+             "Tori.fi","DBA.dk","Depop","Etsy","Reverb","OLX"]
+    kb = types.InlineKeyboardMarkup(row_width=2)
+    for p in plats:
+        kb.add(types.InlineKeyboardButton(p, callback_data=f"platform_{p}"))
     kb.add(types.InlineKeyboardButton("⬅️ Назад", callback_data="catalog"))
-    safe_edit(call.message.chat.id, call.message.message_id, f"Категория: {cat}", kb)
+    safe_edit(call.message.chat.id, call.message.message_id, "Выберите платформу:", kb)
 
-@bot.callback_query_handler(func=lambda c: c.data.startswith("item_"))
-def show_item(call):
-    key = call.data[5:]
-    goods = get_current_goods()
-    item = goods.get(key)
-    if not item:
-        bot.answer_callback_query(call.id, "Товар не найден")
-        return
+# ----- Kleinanzeigen -----
+@bot.callback_query_handler(func=lambda c: c.data == "platform_Kleinanzeigen")
+def klein(call):
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton("Brute", callback_data="klein_brute"))
+    kb.add(types.InlineKeyboardButton("Hand-Reg", callback_data="klein_handreg"))
+    kb.add(types.InlineKeyboardButton("⬅️ Назад", callback_data="cat_accounts"))
+    safe_edit(call.message.chat.id, call.message.message_id, "Kleinanzeigen.de – тип:", kb)
+
+klein_items = {
+    "klein_brute_top_old": ("⭐️ TOP 2009 - 2024", 45.0, 6),
+    "klein_brute_mix_old": ("⚡️ MIX 2009 - 2024", 35.0, 2),
+    "klein_brute_top_new": ("⭐️ TOP 2025-2026", 50.0, 0),
+    "klein_brute_mix_new": ("⚡️ MIX 2025-2026", 25.0, 16),
+    "klein_hand_mix": ("🌍 Mix | BandianaFarm", 7.99, 0),
+    "klein_hand_de": ("🇩🇪 De | Hand-Reg", 9.5, 6),
+}
+
+@bot.callback_query_handler(func=lambda c: c.data == "klein_brute")
+def klein_brute(call):
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton("TOP 2009-2024 | 45$ | 6", callback_data="klein_brute_top_old"))
+    kb.add(types.InlineKeyboardButton("MIX 2009-2024 | 35$ | 2", callback_data="klein_brute_mix_old"))
+    kb.add(types.InlineKeyboardButton("TOP 2025-2026 | 50$ | 0", callback_data="klein_brute_top_new"))
+    kb.add(types.InlineKeyboardButton("MIX 2025-2026 | 25$ | 16", callback_data="klein_brute_mix_new"))
+    kb.add(types.InlineKeyboardButton("⬅️ Назад", callback_data="platform_Kleinanzeigen"))
+    safe_edit(call.message.chat.id, call.message.message_id, "Brute – выберите:", kb)
+
+@bot.callback_query_handler(func=lambda c: c.data == "klein_handreg")
+def klein_handreg(call):
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton("MIX | 7.99$ | 23", callback_data="klein_hand_mix"))
+    kb.add(types.InlineKeyboardButton("De | 9.5$ | 6", callback_data="klein_hand_de"))
+    kb.add(types.InlineKeyboardButton("⬅️ Назад", callback_data="platform_Kleinanzeigen"))
+    safe_edit(call.message.chat.id, call.message.message_id, "Hand-Reg – выберите:", kb)
+
+@bot.callback_query_handler(func=lambda c: c.data in klein_items)
+def klein_item(call):
+    name, price, stock = klein_items[call.data]
     uid = str(call.from_user.id)
     user_orders[uid] = OrderData()
-    user_orders[uid].item_key = key
-    user_orders[uid].price = item["price"]
-    user_orders[uid].stock = item["stock"]
-    if item["price"] < 10:
-        user_orders[uid].min_qty = max(1, math.ceil(11 / item["price"]))
+    user_orders[uid].item_name = name
+    user_orders[uid].price = price
+    user_orders[uid].stock = stock
+    if price < 10:
+        user_orders[uid].min_qty = max(1, math.ceil(11 / price))
     else:
         user_orders[uid].min_qty = 1
-    text = f"⭐️ {item['name']}\nЦена: ${item['price']:.2f}\nВ наличии: {item['stock']} шт.\n\n{item.get('description', '')}"
-    kb = types.InlineKeyboardMarkup()
-    kb.add(types.InlineKeyboardButton("Купить", callback_data="buy_request"))
-    kb.add(types.InlineKeyboardButton("В корзину", callback_data="add_to_cart"))
-    kb.add(types.InlineKeyboardButton("⬅️ Назад", callback_data=f"cat_{item['category']}"))
-    safe_edit(call.message.chat.id, call.message.message_id, text, kb)
-
-# ======= Запрос количества и обработка =======
-@bot.callback_query_handler(func=lambda c: c.data == "buy_request")
-def buy_request(call):
-    uid = str(call.from_user.id)
-    order = user_orders.get(uid)
-    if not order:
-        bot.answer_callback_query(call.id, "Сначала выберите товар.")
-        return
     show_item_qty(call, uid)
 
+# ----- Wallapop -----
+@bot.callback_query_handler(func=lambda c: c.data == "platform_Wallapop")
+def wallapop(call):
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton("Wallapop BRUTE", callback_data="wallapop_brute"))
+    kb.add(types.InlineKeyboardButton("Hand-Reg 2026", callback_data="wallapop_handreg"))
+    kb.add(types.InlineKeyboardButton("⬅️ Назад", callback_data="cat_accounts"))
+    safe_edit(call.message.chat.id, call.message.message_id, "Wallapop – тип:", kb)
+
+@bot.callback_query_handler(func=lambda c: c.data == "wallapop_brute")
+def wallapop_brute(call):
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton("Cookie 2013-2023 | 9.9$ | 5", callback_data="wallapop_brute_old"))
+    kb.add(types.InlineKeyboardButton("Cookie 2024-2025 | 5.99$ | 4", callback_data="wallapop_brute_new"))
+    kb.add(types.InlineKeyboardButton("⬅️ Назад", callback_data="platform_Wallapop"))
+    safe_edit(call.message.chat.id, call.message.message_id, "Wallapop BRUTE:", kb)
+
+@bot.callback_query_handler(func=lambda c: c.data == "wallapop_handreg")
+def wallapop_handreg(call):
+    uid = str(call.from_user.id)
+    user_orders[uid] = OrderData()
+    user_orders[uid].item_name = "Hand-Reg Wallapop 2026"
+    user_orders[uid].price = 0.75
+    user_orders[uid].stock = 105
+    if user_orders[uid].price < 10:
+        user_orders[uid].min_qty = max(1, math.ceil(11 / 0.75))
+    else:
+        user_orders[uid].min_qty = 1
+    show_item_qty(call, uid)
+
+@bot.callback_query_handler(func=lambda c: c.data in ["wallapop_brute_old","wallapop_brute_new"])
+def wallapop_brute_item(call):
+    uid = str(call.from_user.id)
+    user_orders[uid] = OrderData()
+    if call.data == "wallapop_brute_old":
+        user_orders[uid].item_name = "🇪🇸 Brt Cookie 2013-2023"
+        user_orders[uid].price = 9.9
+        user_orders[uid].stock = 5
+    else:
+        user_orders[uid].item_name = "Cookie 2024-2025"
+        user_orders[uid].price = 5.99
+        user_orders[uid].stock = 4
+    if user_orders[uid].price < 10:
+        user_orders[uid].min_qty = max(1, math.ceil(11 / user_orders[uid].price))
+    else:
+        user_orders[uid].min_qty = 1
+    show_item_qty(call, uid)
+
+# ----- Milanuncios -----
+@bot.callback_query_handler(func=lambda c: c.data == "platform_Milanuncios")
+def milanuncios(call):
+    uid = str(call.from_user.id)
+    user_orders[uid] = OrderData()
+    user_orders[uid].item_name = "🇪🇸 Milanuncios.com • BRUTE • MIX"
+    user_orders[uid].price = 2.50
+    user_orders[uid].stock = 85
+    if user_orders[uid].price < 10:
+        user_orders[uid].min_qty = max(1, math.ceil(11 / 2.5))
+    else:
+        user_orders[uid].min_qty = 1
+    show_item_qty(call, uid)
+
+# ----- OfferUp -----
+@bot.callback_query_handler(func=lambda c: c.data == "platform_OfferUp")
+def offerup(call):
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton("OfferUp BRUTE Mix", callback_data="offerup_brute"))
+    kb.add(types.InlineKeyboardButton("Hand-Reg 1-3 Days", callback_data="offerup_handreg"))
+    kb.add(types.InlineKeyboardButton("⬅️ Назад", callback_data="cat_accounts"))
+    safe_edit(call.message.chat.id, call.message.message_id, "OfferUp – тип:", kb)
+
+@bot.callback_query_handler(func=lambda c: c.data == "offerup_brute")
+def offerup_brute(call):
+    uid = str(call.from_user.id)
+    user_orders[uid] = OrderData()
+    user_orders[uid].item_name = "OfferUp.com BRUTE MIX"
+    user_orders[uid].price = 5.0
+    user_orders[uid].stock = 30
+    if user_orders[uid].price < 10:
+        user_orders[uid].min_qty = max(1, math.ceil(11 / 5.0))
+    else:
+        user_orders[uid].min_qty = 1
+    show_item_qty(call, uid)
+
+@bot.callback_query_handler(func=lambda c: c.data == "offerup_handreg")
+def offerup_handreg(call):
+    uid = str(call.from_user.id)
+    user_orders[uid] = OrderData()
+    user_orders[uid].item_name = "🇺🇸 Hand-Reg OfferUp 2026"
+    user_orders[uid].price = 0.40
+    user_orders[uid].stock = 84
+    if user_orders[uid].price < 10:
+        user_orders[uid].min_qty = max(1, math.ceil(11 / 0.4))
+    else:
+        user_orders[uid].min_qty = 1
+    show_item_qty(call, uid)
+
+# ----- Простые платформы -----
+simple_platforms = {
+    "Poshmark": ("🇺🇸 Poshmark.com • BRUTE • MIX", 6.50, 56),
+    "Ricardo": ("🇨🇭 Ricardo.ch • BRUTE • MIX", 17.00, 6),
+    "Tutti": ("🇨🇭 Tutti.ch • BRUTE • MIX", 15.00, 3),
+    "Subito": ("🇮🇹 Subito.it Mix 2007-2025", 4.50, 50),
+    "Marktplaats": ("🇳🇱 Marktplaats.nl • BRUTE • MIX", 5.00, 0),
+    "Finn.no": ("🇳🇴 Finn.no • BRUTE • MIX", 5.00, 0),
+    "Blocket": ("🇸🇪 Blocket.se • BRUTE • MIX", 5.00, 0),
+    "Tori.fi": ("🇫🇮 Tori.fi • BRUTE • MIX", 6.00, 1),
+    "DBA.dk": ("🇩🇰 DBA.dk • BRUTE • MIX", 5.00, 2),
+    "Depop": ("🌎 Depop.com • BRUTE • MIX", 4.00, 7),
+    "Etsy": ("🌎 Etsy.com • BRUTE • MIX", 5.00, 0),
+    "Reverb": ("🌎 Reverb.com • BRUTE • MIX", 5.00, 0),
+}
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("platform_") and c.data.split("_",1)[1] in simple_platforms)
+def simple_platform(call):
+    plat = call.data.split("_", 1)[1]
+    name, price, stock = simple_platforms[plat]
+    uid = str(call.from_user.id)
+    user_orders[uid] = OrderData()
+    user_orders[uid].item_name = name
+    user_orders[uid].price = price
+    user_orders[uid].stock = stock
+    if price < 10:
+        user_orders[uid].min_qty = max(1, math.ceil(11 / price))
+    else:
+        user_orders[uid].min_qty = 1
+    show_item_qty(call, uid)
+
+# ----- OLX -----
+olx_data = {
+    "pl": {"mix": ("🇵🇱 Olx.pl 2008-2026 Mix", 2.25, 31, 5), "hand": ("🇵🇱 Hand-Reg Olx.pl", 0.20, 0, 1)},
+    "ro": {"mix": ("🇷🇴 Olx.ro 2010-2026 Mix", 2.75, 16, 5), "hand": ("🇷🇴 Hand-Reg Olx.ro", 0.20, 0, 1)},
+    "bg": {"mix": ("🇧🇬 Olx.bg 2005-2026 Mix", 5.00, 22, 5), "hand": ("🇧🇬 Hand-Reg Olx.bg", 0.20, 39, 10)},
+    "pt": {"mix": ("🇵🇹 Olx.pt 2007-2026 Mix", 2.75, 12, 5), "hand": ("🇵🇹 Hand-Reg Olx.pt", 0.20, 23, 10)},
+}
+
+@bot.callback_query_handler(func=lambda c: c.data == "platform_OLX")
+def olx_main(call):
+    kb = types.InlineKeyboardMarkup(row_width=2)
+    kb.add(types.InlineKeyboardButton("OLX.pl", callback_data="olx_pl"))
+    kb.add(types.InlineKeyboardButton("OLX.ro", callback_data="olx_ro"))
+    kb.add(types.InlineKeyboardButton("OLX.bg", callback_data="olx_bg"))
+    kb.add(types.InlineKeyboardButton("OLX.pt", callback_data="olx_pt"))
+    kb.add(types.InlineKeyboardButton("⬅️ Назад", callback_data="cat_accounts"))
+    safe_edit(call.message.chat.id, call.message.message_id, "OLX – страна:", kb)
+
+@bot.callback_query_handler(func=lambda c: c.data in ["olx_pl","olx_ro","olx_bg","olx_pt"])
+def olx_type_choice(call):
+    country = call.data.split("_")[1]
+    uid = str(call.from_user.id)
+    user_orders[uid] = OrderData()
+    user_orders[uid].country = country
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton(f"Olx.{country} Mix", callback_data=f"olx_{country}_mix"))
+    kb.add(types.InlineKeyboardButton(f"Hand-Reg Olx.{country}", callback_data=f"olx_{country}_hand"))
+    kb.add(types.InlineKeyboardButton("⬅️ Назад", callback_data="platform_OLX"))
+    safe_edit(call.message.chat.id, call.message.message_id, f"OLX.{country} – тип:", kb)
+
+@bot.callback_query_handler(func=lambda c: c.data.endswith("_mix") or c.data.endswith("_hand"))
+def olx_item(call):
+    parts = call.data.split("_")
+    country = parts[1]
+    typ = parts[2]
+    name, price, stock, minq_default = olx_data[country][typ]
+    uid = str(call.from_user.id)
+    user_orders[uid] = OrderData()
+    user_orders[uid].item_name = name
+    user_orders[uid].price = price
+    user_orders[uid].stock = stock
+    if price < 10:
+        user_orders[uid].min_qty = max(1, math.ceil(11 / price))
+    else:
+        user_orders[uid].min_qty = 1
+    show_item_qty(call, uid)
+
+# ---------- Социальные сети (WhatsApp, Telegram обычные, Telegram с историей) ----------
+@bot.callback_query_handler(func=lambda c: c.data == "cat_social")
+def social(call):
+    kb = types.InlineKeyboardMarkup(row_width=2)
+    kb.add(types.InlineKeyboardButton("WhatsApp", callback_data="social_wa_start"))
+    kb.add(types.InlineKeyboardButton("Telegram обычные", callback_data="social_tg_start"))
+    kb.add(types.InlineKeyboardButton("Telegram с историей (6+ мес)", callback_data="social_tg_history"))
+    kb.add(types.InlineKeyboardButton("⬅️ Назад", callback_data="catalog"))
+    safe_edit(call.message.chat.id, call.message.message_id, "Социальные сети:", kb)
+
+# WhatsApp
+def wa_start(call):
+    uid = str(call.from_user.id)
+    if uid not in user_orders:
+        user_orders[uid] = OrderData()
+    order = user_orders[uid]
+    countries = list(country_flags.keys())
+    kb = types.InlineKeyboardMarkup(row_width=3)
+    for c in countries:
+        btn_text = f"👉 {country_flags[c]} {c}" if c == order.country else f"{country_flags[c]} {c}"
+        kb.add(types.InlineKeyboardButton(btn_text, callback_data=f"wa_country_{c}"))
+    kb.add(types.InlineKeyboardButton("Подтвердить выбор", callback_data="wa_confirm"))
+    kb.add(types.InlineKeyboardButton("⬅️ Назад", callback_data="cat_social"))
+    flag = country_flags.get(order.country, "")
+    display = f"{flag} {order.country}" if order.country else "-"
+    safe_edit(call.message.chat.id, call.message.message_id,
+              f"📲 WhatsApp аккаунты\n🌍 Выбранная страна: {display}", kb)
+
+@bot.callback_query_handler(func=lambda c: c.data == "social_wa_start")
+def social_wa_start(call):
+    wa_start(call)
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("wa_country_"))
+def wa_country(call):
+    country = call.data.split("_", 2)[2]
+    uid = str(call.from_user.id)
+    if uid not in user_orders:
+        user_orders[uid] = OrderData()
+    user_orders[uid].country = country
+    wa_start(call)
+
+@bot.callback_query_handler(func=lambda c: c.data == "wa_confirm")
+def wa_install(call):
+    uid = str(call.from_user.id)
+    if uid not in user_orders or not user_orders[uid].country:
+        bot.answer_callback_query(call.id, "Сначала выберите страну!", show_alert=True)
+        return
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton("Эмулятор / Телефон", callback_data="wa_install_emu"))
+    kb.add(types.InlineKeyboardButton("web.whatsapp.com", callback_data="wa_install_web"))
+    kb.add(types.InlineKeyboardButton("⬅️ Назад", callback_data="wa_confirm"))
+    safe_edit(call.message.chat.id, call.message.message_id,
+              "📲 WhatsApp аккаунты\nКуда установить?", kb)
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("wa_install_"))
+def wa_final(call):
+    method = "Эмулятор / Телефон" if call.data == "wa_install_emu" else "web.whatsapp.com"
+    uid = str(call.from_user.id)
+    order = user_orders[uid]
+    order.install = method
+    flag = country_flags.get(order.country, "")
+    order.item_name = f"📲 WhatsApp ({flag} {order.country}) на {method}"
+    order.price = 11.99
+    order.stock = 999
+    order.no_qty = True
+    if order.price < 10:
+        order.min_qty = max(1, math.ceil(11 / order.price))
+    else:
+        order.min_qty = 1
+    text = f"Вы выбрали: {method}\nЦена: $11.99"
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton("Купить", callback_data="buy_now"))
+    kb.add(types.InlineKeyboardButton("🧺 В корзину", callback_data="add_to_cart"))
+    kb.add(types.InlineKeyboardButton("⬅️ Назад", callback_data="wa_confirm"))
+    kb.add(types.InlineKeyboardButton("Меню", callback_data="menu"))
+    safe_edit(call.message.chat.id, call.message.message_id, text, kb)
+
+# Telegram обычные (с выбором страны)
+@bot.callback_query_handler(func=lambda c: c.data == "social_tg_start")
+def tg_start(call):
+    uid = str(call.from_user.id)
+    if uid not in user_orders:
+        user_orders[uid] = OrderData()
+    order = user_orders[uid]
+    countries = list(country_flags.keys())
+    kb = types.InlineKeyboardMarkup(row_width=3)
+    for c in countries:
+        btn_text = f"👉 {country_flags[c]} {c}" if c == order.country else f"{country_flags[c]} {c}"
+        kb.add(types.InlineKeyboardButton(btn_text, callback_data=f"tg_country_{c}"))
+    kb.add(types.InlineKeyboardButton("Подтвердить выбор", callback_data="tg_confirm"))
+    kb.add(types.InlineKeyboardButton("⬅️ Назад", callback_data="cat_social"))
+    flag = country_flags.get(order.country, "")
+    display = f"{flag} {order.country}" if order.country else "-"
+    safe_edit(call.message.chat.id, call.message.message_id,
+              f"📱 Telegram аккаунты\n🌍 Выбранная страна: {display}", kb)
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("tg_country_"))
+def tg_country(call):
+    country = call.data.split("_", 2)[2]
+    uid = str(call.from_user.id)
+    if uid not in user_orders:
+        user_orders[uid] = OrderData()
+    user_orders[uid].country = country
+    tg_start(call)
+
+@bot.callback_query_handler(func=lambda c: c.data == "tg_confirm")
+def tg_confirm(call):
+    uid = str(call.from_user.id)
+    if uid not in user_orders or not user_orders[uid].country:
+        bot.answer_callback_query(call.id, "Сначала выберите страну!", show_alert=True)
+        return
+    order = user_orders[uid]
+    flag = country_flags.get(order.country, "")
+    order.item_name = f"📱 Telegram ({flag} {order.country})"
+    order.price = 5.00
+    order.stock = 999
+    order.no_qty = True
+    if order.price < 10:
+        order.min_qty = max(1, math.ceil(11 / order.price))
+    else:
+        order.min_qty = 1
+    text = f"📱 Telegram аккаунт\nСтрана: {flag} {order.country}\nЦена: $5.00"
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton("Купить", callback_data="buy_now"))
+    kb.add(types.InlineKeyboardButton("🧺 В корзину", callback_data="add_to_cart"))
+    kb.add(types.InlineKeyboardButton("⬅️ Назад", callback_data="social_tg_start"))
+    kb.add(types.InlineKeyboardButton("Меню", callback_data="menu"))
+    safe_edit(call.message.chat.id, call.message.message_id, text, kb)
+
+# Telegram с историей (новый товар в соцсетях)
+@bot.callback_query_handler(func=lambda c: c.data == "social_tg_history")
+def tg_history_social(call):
+    uid = str(call.from_user.id)
+    name = "📱 Telegram аккаунт с историей (6+ мес)"
+    price = 5.0
+    stock = 55
+    user_orders[uid] = OrderData()
+    user_orders[uid].item_name = name
+    user_orders[uid].price = price
+    user_orders[uid].stock = stock
+    if price < 10:
+        user_orders[uid].min_qty = max(1, math.ceil(11 / price))
+    else:
+        user_orders[uid].min_qty = 1
+    show_item_qty(call, uid)
+
+# ---------- Обучение ----------
+@bot.callback_query_handler(func=lambda c: c.data == "cat_learning")
+def learning(call):
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton("🎓 Обучение EU olx | 25$ | ∞ шт", callback_data="learn_olx"))
+    kb.add(types.InlineKeyboardButton("🎓 Курс: как найти клиентов на OLX (видео+мануал)", callback_data="learn_olx_course"))
+    kb.add(types.InlineKeyboardButton("⬅️ Назад", callback_data="catalog"))
+    safe_edit(call.message.chat.id, call.message.message_id, "Обучение:", kb)
+
+@bot.callback_query_handler(func=lambda c: c.data == "learn_olx")
+def learn_olx(call):
+    uid = str(call.from_user.id)
+    user_orders[uid] = OrderData()
+    user_orders[uid].item_name = "Полное обучение + мануалы по EU OLX. Личный наставник 2 нед."
+    user_orders[uid].price = 25.00
+    user_orders[uid].no_qty = True
+    user_orders[uid].stock = 999
+    if user_orders[uid].price < 10:
+        user_orders[uid].min_qty = max(1, math.ceil(11 / user_orders[uid].price))
+    else:
+        user_orders[uid].min_qty = 1
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton("Купить", callback_data="buy_now"))
+    kb.add(types.InlineKeyboardButton("🧺 В корзину", callback_data="add_to_cart"))
+    kb.add(types.InlineKeyboardButton("🏠 Меню", callback_data="menu"))
+    safe_edit(call.message.chat.id, call.message.message_id,
+              "Полное обучение + мануалы по EU OLX (страна любая). Личный наставник на 2 недели доведёт до профита. Если нет – вернём деньги.", kb)
+
+@bot.callback_query_handler(func=lambda c: c.data == "learn_olx_course")
+def learn_olx_course(call):
+    uid = str(call.from_user.id)
+    user_orders[uid] = OrderData()
+    user_orders[uid].item_name = "Курс: Как найти клиентов на OLX (видео+мануал)"
+    user_orders[uid].price = 25.00
+    user_orders[uid].no_qty = True
+    user_orders[uid].stock = 88
+    if user_orders[uid].price < 10:
+        user_orders[uid].min_qty = max(1, math.ceil(11 / user_orders[uid].price))
+    else:
+        user_orders[uid].min_qty = 1
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton("Купить", callback_data="buy_now"))
+    kb.add(types.InlineKeyboardButton("🧺 В корзину", callback_data="add_to_cart"))
+    kb.add(types.InlineKeyboardButton("⬅️ Назад", callback_data="cat_learning"))
+    safe_edit(call.message.chat.id, call.message.message_id,
+              "Видеокурс + мануал по привлечению клиентов на OLX. Готовые шаблоны, схема регистрации аккаунтов, переговоры с клиентами.", kb)
+
+# ---------- Proxy ----------
+@bot.callback_query_handler(func=lambda c: c.data == "cat_proxy")
+def proxy(call):
+    kb = types.InlineKeyboardMarkup(row_width=2)
+    kb.add(types.InlineKeyboardButton("300 IPs | 13$ | 235 шт", callback_data="proxy_300"))
+    kb.add(types.InlineKeyboardButton("800 IPs | 33$ | 36 шт", callback_data="proxy_800"))
+    kb.add(types.InlineKeyboardButton("5000 IPs | 165$ | 6 шт", callback_data="proxy_5000"))
+    kb.add(types.InlineKeyboardButton("🌐 Резидентные прокси (10 шт)", callback_data="proxy_residential"))
+    kb.add(types.InlineKeyboardButton("⬅️ Назад", callback_data="catalog"))
+    safe_edit(call.message.chat.id, call.message.message_id, "Выберите тип прокси:", kb)
+
+proxy_data = {
+    "proxy_300": ("9Proxy 300 IPs", 13, 235, 1),
+    "proxy_800": ("9Proxy 800 IPs", 33, 36, 1),
+    "proxy_5000": ("9Proxy 5000 IPs", 165, 6, 1),
+}
+
+@bot.callback_query_handler(func=lambda c: c.data in proxy_data)
+def proxy_item(call):
+    name, price, stock, minq_default = proxy_data[call.data]
+    uid = str(call.from_user.id)
+    user_orders[uid] = OrderData()
+    user_orders[uid].item_name = name
+    user_orders[uid].price = price
+    user_orders[uid].stock = stock
+    if price < 10:
+        user_orders[uid].min_qty = max(1, math.ceil(11 / price))
+    else:
+        user_orders[uid].min_qty = 1
+    show_item_qty(call, uid)
+
+@bot.callback_query_handler(func=lambda c: c.data == "proxy_residential")
+def proxy_residential(call):
+    uid = str(call.from_user.id)
+    name = "🌐 Резидентные прокси (10 шт, ротация)"
+    price = 12.0
+    stock = 42
+    user_orders[uid] = OrderData()
+    user_orders[uid].item_name = name
+    user_orders[uid].price = price
+    user_orders[uid].stock = stock
+    if price < 10:
+        user_orders[uid].min_qty = max(1, math.ceil(11 / price))
+    else:
+        user_orders[uid].min_qty = 1
+    show_item_qty(call, uid)
+
+# ---------- Купоны ----------
+@bot.callback_query_handler(func=lambda c: c.data == "cat_coupons")
+def coupons_menu(call):
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton("🎫 ChatGPT Plus (1 мес)", callback_data="coupon_chatgpt"))
+    kb.add(types.InlineKeyboardButton("🎫 Midjourney (1 мес)", callback_data="coupon_midjourney"))
+    kb.add(types.InlineKeyboardButton("⬅️ Назад", callback_data="catalog"))
+    safe_edit(call.message.chat.id, call.message.message_id, "Выберите купон:", kb)
+
+@bot.callback_query_handler(func=lambda c: c.data == "coupon_chatgpt")
+def coupon_chatgpt(call):
+    uid = str(call.from_user.id)
+    name = "🎫 Купон ChatGPT Plus (1 месяц)"
+    price = 8.0
+    stock = 23
+    user_orders[uid] = OrderData()
+    user_orders[uid].item_name = name
+    user_orders[uid].price = price
+    user_orders[uid].stock = stock
+    if price < 10:
+        user_orders[uid].min_qty = max(1, math.ceil(11 / price))
+    else:
+        user_orders[uid].min_qty = 1
+    show_item_qty(call, uid)
+
+@bot.callback_query_handler(func=lambda c: c.data == "coupon_midjourney")
+def coupon_midjourney(call):
+    uid = str(call.from_user.id)
+    name = "🎫 Купон Midjourney (полный доступ, 1 месяц)"
+    price = 9.5
+    stock = 17
+    user_orders[uid] = OrderData()
+    user_orders[uid].item_name = name
+    user_orders[uid].price = price
+    user_orders[uid].stock = stock
+    if price < 10:
+        user_orders[uid].min_qty = max(1, math.ceil(11 / price))
+    else:
+        user_orders[uid].min_qty = 1
+    show_item_qty(call, uid)
+
+# ---------- Базы данных ----------
+@bot.callback_query_handler(func=lambda c: c.data == "cat_databases")
+def databases_menu(call):
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton("📚 База Telegram-каналов (5000)", callback_data="db_tg_channels"))
+    kb.add(types.InlineKeyboardButton("⬅️ Назад", callback_data="catalog"))
+    safe_edit(call.message.chat.id, call.message.message_id, "Выберите базу данных:", kb)
+
+@bot.callback_query_handler(func=lambda c: c.data == "db_tg_channels")
+def db_tg_channels(call):
+    uid = str(call.from_user.id)
+    name = "📚 База Telegram-каналов (5000, 3 темы)"
+    price = 15.0
+    stock = 12
+    user_orders[uid] = OrderData()
+    user_orders[uid].item_name = name
+    user_orders[uid].price = price
+    user_orders[uid].stock = stock
+    if price < 10:
+        user_orders[uid].min_qty = max(1, math.ceil(11 / price))
+    else:
+        user_orders[uid].min_qty = 1
+    show_item_qty(call, uid)
+
+# ---------- Премиум ----------
+@bot.callback_query_handler(func=lambda c: c.data == "premium_menu")
+def premium_menu(call):
+    kb = types.InlineKeyboardMarkup(row_width=2)
+    kb.add(types.InlineKeyboardButton("1 мес – $5", callback_data="prem_1"))
+    kb.add(types.InlineKeyboardButton("3 мес – $9", callback_data="prem_3"))
+    kb.add(types.InlineKeyboardButton("6 мес – $20", callback_data="prem_6"))
+    kb.add(types.InlineKeyboardButton("12 мес – $36", callback_data="prem_12"))
+    kb.add(types.InlineKeyboardButton("⬅️ Назад", callback_data="menu"))
+    safe_edit(call.message.chat.id, call.message.message_id, "💎 Premium подписка Telegram", kb)
+
+prem_data = {
+    "prem_1": ("Премиум 1 месяц", 5),
+    "prem_3": ("Премиум 3 месяца", 9),
+    "prem_6": ("Премиум 6 месяцев", 20),
+    "prem_12": ("Премиум 12 месяцев", 36),
+}
+
+@bot.callback_query_handler(func=lambda c: c.data in prem_data)
+def prem_buy(call):
+    name, price = prem_data[call.data]
+    uid = str(call.from_user.id)
+    user_orders[uid] = OrderData()
+    user_orders[uid].item_name = name
+    user_orders[uid].price = price
+    user_orders[uid].no_qty = True
+    if price < 10:
+        user_orders[uid].min_qty = max(1, math.ceil(11 / price))
+    else:
+        user_orders[uid].min_qty = 1
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton("Купить", callback_data="buy_now"))
+    kb.add(types.InlineKeyboardButton("🧺 В корзину", callback_data="add_to_cart"))
+    kb.add(types.InlineKeyboardButton("⬅️ Назад", callback_data="premium_menu"))
+    safe_edit(call.message.chat.id, call.message.message_id, f"{name}\nЦена: ${price}", kb)
+
+# ======================= КОРЗИНА, ОПЛАТА, ОБЩИЕ ФУНКЦИИ =======================
+# Функции show_item_qty, process_qty, add_to_cart, view_cart, checkout_cart, buy_now, check_payment
+# (они уже были в предыдущих версиях, но я их вставлю ниже, чтобы код был полным)
+
+# ---------- Показ товара с вводом количества ----------
 def show_item_qty(call, uid):
     order = user_orders[uid]
     if order.stock == 0:
-        text = f"⭐️ {order.item_key}\nЦена: ${order.price:.2f}\nВ наличии: 0 шт."
+        text = f"⭐️ {order.item_name}\nЦена: ${order.price:.2f}\nВ наличии: 0 шт."
         safe_edit(call.message.chat.id, call.message.message_id, text, back_btn("menu"))
         return
-    text = (f"⭐️ {order.item_key}\nЦена: ${order.price:.2f} за шт.\n"
+    text = (f"⭐️ {order.item_name}\nЦена: ${order.price:.2f} за шт.\n"
             f"В наличии: {order.stock} шт.\nМинимально: {order.min_qty} шт.\n\n"
             "✏️ Введите желаемое количество:")
     kb = types.InlineKeyboardMarkup()
@@ -470,13 +1004,14 @@ def process_qty(message):
         return
     order.qty = qty
     total = order.price * qty
-    text = f"{order.item_key} × {qty}\nИтого: ${total:.2f}"
+    text = f"{order.item_name} × {qty}\nИтого: ${total:.2f}"
     kb = types.InlineKeyboardMarkup()
     kb.add(types.InlineKeyboardButton("Купить", callback_data="buy_now"))
-    kb.add(types.InlineKeyboardButton("В корзину", callback_data="add_to_cart"))
+    kb.add(types.InlineKeyboardButton("🧺 В корзину", callback_data="add_to_cart"))
     kb.add(types.InlineKeyboardButton("⬅️ Назад", callback_data="menu"))
     bot.send_message(message.chat.id, text, reply_markup=kb)
 
+# ---------- Корзина ----------
 @bot.callback_query_handler(func=lambda c: c.data == "add_to_cart")
 def add_to_cart(call):
     uid = str(call.from_user.id)
@@ -486,7 +1021,7 @@ def add_to_cart(call):
         return
     qty = 1 if order.no_qty else (order.qty if order.qty > 0 else 1)
     carts.setdefault(uid, []).append({
-        "item_key": order.item_key,
+        "item_name": order.item_name,
         "price": order.price,
         "qty": qty
     })
@@ -508,7 +1043,7 @@ def view_cart(call):
     lines = ["🛒 Ваша корзина:"]
     for idx, item in enumerate(carts[uid], 1):
         total += item["price"] * item["qty"]
-        lines.append(f"{idx}. {item['item_key']} ×{item['qty']} – ${item['price']*item['qty']:.2f}")
+        lines.append(f"{idx}. {item['item_name']} ×{item['qty']} – ${item['price']*item['qty']:.2f}")
     lines.append(f"\n💰 Общая сумма: ${total:.2f}")
     kb = types.InlineKeyboardMarkup()
     kb.add(types.InlineKeyboardButton("🧾 Оплатить всё", callback_data="checkout_cart"))
@@ -528,7 +1063,7 @@ def checkout_cart(call):
         bot.answer_callback_query(call.id, "Корзина пуста.")
         return
     total = sum(item["price"] * item["qty"] for item in carts[uid])
-    desc = ", ".join(f"{i['item_key']} x{i['qty']}" for i in carts[uid])
+    desc = ", ".join(f"{i['item_name']} x{i['qty']}" for i in carts[uid])
     inv_url, inv_id, err = create_invoice(total, desc)
     if err:
         bot.send_message(call.message.chat.id, f"Ошибка создания счёта: {err}")
@@ -537,7 +1072,7 @@ def checkout_cart(call):
     order.invoice_id = inv_id
     order.is_topup = False
     for item in carts[uid]:
-        log_tx(uid, "buy", item["price"] * item["qty"], item=item["item_key"], ref=users[uid].get("referrer"), invoice_id=inv_id)
+        log_tx(uid, "buy", item["price"] * item["qty"], item=item["item_name"], ref=users[uid].get("referrer"), invoice_id=inv_id)
     kb = types.InlineKeyboardMarkup()
     kb.add(types.InlineKeyboardButton("💳 Оплатить", url=inv_url))
     kb.add(types.InlineKeyboardButton("🔄 Проверить оплату", callback_data="check_payment"))
@@ -557,19 +1092,19 @@ def buy_now(call):
         return
     qty = 1 if order.no_qty else (order.qty if order.qty > 0 else 1)
     total = order.price * qty
-    inv_url, inv_id, err = create_invoice(total, f"{order.item_key} x{qty}")
+    inv_url, inv_id, err = create_invoice(total, f"{order.item_name} x{qty}")
     if err:
         bot.send_message(call.message.chat.id, f"Ошибка создания счёта: {err}")
         return
     order.invoice_id = inv_id
     order.is_topup = False
-    log_tx(uid, "buy", total, item=order.item_key, ref=users[uid].get("referrer"), invoice_id=inv_id)
+    log_tx(uid, "buy", total, item=order.item_name, ref=users[uid].get("referrer"), invoice_id=inv_id)
     kb = types.InlineKeyboardMarkup()
     kb.add(types.InlineKeyboardButton("💳 Оплатить", url=inv_url))
     kb.add(types.InlineKeyboardButton("🔄 Проверить оплату", callback_data="check_payment"))
     kb.add(types.InlineKeyboardButton("Меню", callback_data="menu"))
     bot.send_message(call.message.chat.id,
-                     f"Счёт на оплату создан.\nТовар: {order.item_key}\nКол-во: {qty}\nСумма: ${total:.2f}",
+                     f"Счёт на оплату создан.\nТовар: {order.item_name}\nКол-во: {qty}\nСумма: ${total:.2f}",
                      reply_markup=kb)
     threading.Thread(target=auto_check_payment, args=(call.message.chat.id, uid, inv_id)).start()
 
@@ -608,7 +1143,7 @@ def check_payment(call):
                 f"🛒 <b>Покупка товара</b>\n"
                 f"👤 Пользователь: {user_link}\n"
                 f"👥 Реферал: {ref_link}\n"
-                f"📦 Товар: {order.item_key}\n"
+                f"📦 Товар: {order.item_name}\n"
                 f"🔢 Кол-во: {qty}\n"
                 f"💵 Сумма: ${order.price * qty:.2f}"
             )
